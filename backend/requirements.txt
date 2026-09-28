@@ -42,3 +42,5 @@ httpx==0.28.1
 # --- PostGIS ---
 geoalchemy2==0.14.7
 shapely==2.0.4
+
+opencv-python-headless==4.10.0.84
