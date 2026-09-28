@@ -1,0 +1,219 @@
+"use client";
+
+import {
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
+
+import { useRouter } from "next/navigation";
+
+import {
+  AlertFeed,
+  incidentBelongsToDepartment,
+} from "../components/AlertFeed";
+
+import DispatchTable from "../components/DispatchTable";
+
+import IncidentStats from "../components/IncidentStats";
+
+const API = "http://127.0.0.1:8000/api/v1";
+
+export default function FirePage() {
+  const router = useRouter();
+
+  const [incidents, setIncidents] =
+    useState<any[]>([]);
+
+  const [activeIncident, setActiveIncident] =
+    useState<any>(null);
+
+  const loadIncidents = useCallback(async () => {
+    try {
+      const res = await fetch(
+        `${API}/incidents`,
+        {
+          cache: "no-store",
+        }
+      );
+
+      if (!res.ok) {
+        throw new Error(
+          "Failed to fetch incidents"
+        );
+      }
+
+      const data = await res.json();
+
+      data.sort(
+        (a: any, b: any) =>
+          new Date(
+            b.detected_at || 0
+          ).getTime() -
+          new Date(
+            a.detected_at || 0
+          ).getTime()
+      );
+
+      setIncidents(data);
+    } catch (error) {
+      console.error(
+        "Fire incident loading error:",
+        error
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    loadIncidents();
+
+    const timer = setInterval(() => {
+      loadIncidents();
+    }, 3000);
+
+    return () => clearInterval(timer);
+  }, [loadIncidents]);
+
+  const fireIncidents =
+    incidents.filter((incident) =>
+      incidentBelongsToDepartment(
+        incident,
+        "FIRE"
+      )
+    );
+
+  useEffect(() => {
+    if (fireIncidents.length === 0) {
+      setActiveIncident(null);
+      return;
+    }
+
+    setActiveIncident((current: any) => {
+      if (!current) {
+        return fireIncidents[0];
+      }
+
+      const updated =
+        fireIncidents.find(
+          (incident: any) =>
+            incident.id === current.id
+        );
+
+      return (
+        updated ||
+        fireIncidents[0]
+      );
+    });
+  }, [fireIncidents]);
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-white">
+
+      {/* HEADER */}
+      <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur">
+
+        <div className="flex items-center justify-between px-8 py-5">
+
+          <div className="flex items-center gap-6">
+
+            <button
+              onClick={() => router.push("/")}
+              className="rounded-xl border border-slate-700 bg-slate-800 px-5 py-3 text-white transition hover:bg-slate-700"
+            >
+              ← Main Dashboard
+            </button>
+
+            <div>
+              <h1 className="text-4xl font-bold text-orange-400">
+                🚒 Fire Command Center
+              </h1>
+
+              <p className="mt-2 text-slate-400">
+                Live AI Fire Detection & Emergency Dispatch
+              </p>
+            </div>
+
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span className="h-3 w-3 animate-pulse rounded-full bg-green-500" />
+
+            <span className="font-bold text-green-400">
+              LIVE
+            </span>
+          </div>
+
+        </div>
+
+      </header>
+
+      {/* MAIN */}
+      <main className="space-y-6 p-6">
+
+        <IncidentStats
+          incidents={fireIncidents}
+        />
+
+        <div className="grid grid-cols-12 gap-6">
+
+          {/* FIRE INCIDENT FEED */}
+          <div className="col-span-8 h-[720px]">
+
+            <AlertFeed
+              incidents={fireIncidents}
+              activeIncidentId={
+                activeIncident?.id || null
+              }
+              onSelectIncident={(incident) => {
+                setActiveIncident(incident);
+              }}
+              onRefresh={loadIncidents}
+              department="FIRE"
+            />
+
+          </div>
+
+          {/* FIRE DISPATCH */}
+          <div className="col-span-4 h-[720px]">
+
+            <DispatchTable
+              department="FIRE"
+            />
+
+          </div>
+
+        </div>
+
+        {/* QUICK ACTIONS */}
+        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
+
+          <h2 className="mb-5 text-xl font-bold text-orange-400">
+            ⚡ Fire Quick Actions
+          </h2>
+
+          <div className="grid grid-cols-4 gap-4">
+
+            <button className="rounded-xl bg-slate-800 py-4 transition hover:bg-slate-700">
+              🚒 Dispatch Fire Team
+            </button>
+
+            <button className="rounded-xl bg-slate-800 py-4 transition hover:bg-slate-700">
+              👨‍🚒 Firefighters On Duty
+            </button>
+
+            <button className="rounded-xl bg-slate-800 py-4 transition hover:bg-slate-700">
+              📄 Fire Reports
+            </button>
+
+            <button className="rounded-xl bg-red-700 py-4 transition hover:bg-red-600">
+              🚨 Fire Emergency
+            </button>
+
+          </div>
+
+        </div>
+
+      </main>
+    </div>
+  );
+}
