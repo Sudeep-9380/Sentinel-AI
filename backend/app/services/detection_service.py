@@ -729,16 +729,44 @@ class DetectionService:
             return []
 
         # =========================================================
-        # MOST FREQUENT CLASS
+        # SELECT FINAL CLASS USING AVERAGE CONFIDENCE
+        # =========================================================
+        #
+        # For uploaded videos, do not select the class only by
+        # frame frequency. A class can appear in more frames because
+        # of occasional false detections. We instead calculate the
+        # average confidence for each class and select the class
+        # with the strongest average confidence.
         # =========================================================
 
-        final_label = (
-            class_counter
-            .most_common(1)[0][0]
+        average_confidence = {}
+
+        for label, total_confidence in confidence_sum.items():
+
+            count = class_counter.get(label, 0)
+
+            if count > 0:
+                average_confidence[label] = (
+                    total_confidence / count
+                )
+
+        if not average_confidence:
+
+            print("=" * 60)
+            print(
+                "NO VALID THREAT CLASS FOUND"
+            )
+            print("=" * 60)
+
+            return []
+
+        final_label = max(
+            average_confidence,
+            key=average_confidence.get,
         )
 
         # =========================================================
-        # BEST DETECTION
+        # BEST DETECTION FOR FINAL CLASS
         # =========================================================
 
         candidates = [
@@ -750,6 +778,17 @@ class DetectionService:
             ]["code"].lower()
             == final_label
         ]
+
+        if not candidates:
+
+            print("=" * 60)
+            print(
+                "NO CANDIDATE FOUND FOR FINAL CLASS:",
+                final_label,
+            )
+            print("=" * 60)
+
+            return []
 
         best = max(
             candidates,
@@ -769,6 +808,10 @@ class DetectionService:
         print(
             "Confidence Sum:",
             confidence_sum,
+        )
+        print(
+            "Average Confidence:",
+            average_confidence,
         )
         print(
             "Final Label:",

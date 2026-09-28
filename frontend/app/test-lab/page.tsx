@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { Sidebar } from "../components/Sidebar";
+import Sidebar from "../components/Sidebar";
 import { UploadCloud, Video, ChevronLeft, PlayCircle, Settings2 } from "lucide-react";
 
 export default function TestLab() {
@@ -16,7 +16,7 @@ export default function TestLab() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const API_BASE = "http://127.0.0.1:8000/api/v1";
+    const API_BASE = process.env.NEXT_PUBLIC_API_BASE!;
 
     fetch(`${API_BASE}/incidents/meta/test-lab`)
       .then((r) => {
@@ -90,7 +90,7 @@ export default function TestLab() {
                       };
 
                       try {
-                        const API_BASE = "http://127.0.0.1:8000/api/v1";
+                        const API_BASE = process.env.NEXT_PUBLIC_API_BASE!;
                         const response = await fetch(`${API_BASE}/incidents`, {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },

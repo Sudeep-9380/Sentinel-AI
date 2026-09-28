@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-const API = "http://127.0.0.1:8000/api/v1";
+const API = process.env.NEXT_PUBLIC_API_BASE!;
 
 export default function AnalyticsPage() {
     const [incidents, setIncidents] = useState<any[]>([]);

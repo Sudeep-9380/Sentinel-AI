@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-const API_BASE = "http://127.0.0.1:8000/api/v1";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE!;
 
 interface SituationMapProps {
   incidents?: any[];

@@ -19,7 +19,7 @@ export default function MapPage() {
   useEffect(() => {
     const fetchMapData = async () => {
       try {
-        const API_BASE = "http://127.0.0.1:8000/api/v1";
+        const API_BASE = process.env.NEXT_PUBLIC_API_BASE!;
         const res = await fetch(`${API_BASE}/incidents`);
         if (!res.ok) throw new Error("Backend connection failed");
         const data = await res.json();
