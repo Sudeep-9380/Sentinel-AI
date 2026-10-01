@@ -176,7 +176,29 @@ export default function PolicePage() {
 
             <DispatchTable
               department="POLICE"
+              onDispatchRemoved={(incidentId) => {
+
+                console.log(
+                  "Police dispatch removed:",
+                  incidentId
+                );
+
+                setIncidents((current: any[]) =>
+                  current.filter(
+                    (incident: any) =>
+                      incident.id !== incidentId
+                  )
+                );
+
+                setActiveIncident((current: any) =>
+                  current?.id === incidentId
+                    ? null
+                    : current
+                );
+
+              }}
             />
+
 
           </div>
 

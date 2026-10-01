@@ -4,31 +4,24 @@ from fastapi import (
     File,
     HTTPException,
 )
-
 from pathlib import Path
-
 import shutil
 import cv2
 import os
 
-from app.services.detection_service import (
-    DetectionService,
-)
+from app.services.detection_service import DetectionService
 
 
 router = APIRouter(
     prefix="/detect",
-    tags=["Detection"],
+    tags=["Detection"]
 )
 
 detector = DetectionService()
 
-UPLOAD_DIR = "uploads"
 
-os.makedirs(
-    UPLOAD_DIR,
-    exist_ok=True,
-)
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 # ============================================================
@@ -40,67 +33,68 @@ async def detect_image(
     file: UploadFile = File(...)
 ):
 
-    upload_dir = Path(
-        "uploads/images"
-    )
-
+    upload_dir = Path("uploads/images")
     upload_dir.mkdir(
         parents=True,
-        exist_ok=True,
+        exist_ok=True
     )
 
-    file_path = (
-        upload_dir / file.filename
-    )
+    file_path = upload_dir / file.filename
 
-    with open(
-        file_path,
-        "wb",
-    ) as buffer:
+    try:
 
-        shutil.copyfileobj(
-            file.file,
-            buffer,
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(
+                file.file,
+                buffer
+            )
+
+        frame = cv2.imread(
+            str(file_path)
         )
 
-    frame = cv2.imread(
-        str(file_path)
-    )
+        if frame is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid image."
+            )
 
-    if frame is None:
-
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid image.",
-        )
-
-    detections = (
-        detector.process_frame(
+        detections = detector.process_frame(
             frame,
-            confidence_threshold=0.25,
+            confidence_threshold=0.25
         )
-    )
 
-    threat = (
-        detector.detect_threats(
+        threat = detector.detect_threats(
             detections
         )
-    )
 
-    return {
-        "success": True,
-        "filename": file.filename,
-        "count": len(detections),
-        "detected": (
-            threat is not None
-        ),
-        "threat": threat,
-        "detections": detections,
-    }
+        return {
+            "success": True,
+            "filename": file.filename,
+            "count": len(detections),
+            "detected": threat is not None,
+            "threat": threat,
+            "detections": detections,
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as error:
+
+        print(
+            "Image detection error:",
+            error
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(error)
+        )
 
 
 # ============================================================
-# UPLOADED VIDEO DETECTION
+# VIDEO DETECTION
 # ============================================================
 
 @router.post("/video")
@@ -108,50 +102,40 @@ async def detect_video(
     file: UploadFile = File(...)
 ):
 
-    upload_dir = Path(
-        "uploads/videos"
-    )
-
+    upload_dir = Path("uploads/videos")
     upload_dir.mkdir(
         parents=True,
-        exist_ok=True,
+        exist_ok=True
     )
-
-    # Prevent problematic filenames
 
     safe_filename = Path(
         file.filename
     ).name
 
-    file_path = (
-        upload_dir / safe_filename
-    )
+    file_path = upload_dir / safe_filename
 
     try:
 
-        with open(
-            file_path,
-            "wb",
-        ) as buffer:
-
+        with open(file_path, "wb") as buffer:
             shutil.copyfileobj(
                 file.file,
-                buffer,
+                buffer
             )
 
         print("=" * 60)
         print(
             "Uploaded video:",
-            file_path,
+            file_path
         )
         print("=" * 60)
 
-        results = (
-            await detector
-            .process_uploaded_video(
-                str(file_path)
-            )
+        results = await detector.process_uploaded_video(
+            str(file_path)
         )
+
+        # ----------------------------------------------------
+        # NO INCIDENT
+        # ----------------------------------------------------
 
         if not results:
 
@@ -167,59 +151,48 @@ async def detect_video(
                 ),
             }
 
+        # ----------------------------------------------------
+        # BEST RESULT
+        # ----------------------------------------------------
+
         best_result = results[0]
 
         incident = (
-            best_result.get(
-                "incident"
-            )
+            best_result.get("incident")
             or {}
         )
 
         return {
             "success": True,
-
             "detected": True,
-
             "incident_created": (
-                incident.get(
-                    "incident_id"
-                )
+                incident.get("incident_id")
                 is not None
             ),
-
-            "frames_detected": len(
-                results
-            ),
-
+            "frames_detected": len(results),
             "threat": incident,
-
             "results": results,
-
             "message": (
                 f"{incident.get('code', 'INCIDENT')} "
-                "detected successfully."
+                f"detected successfully."
             ),
         }
 
+    except HTTPException:
+        raise
+
     except Exception as error:
 
-        print(
-            "=" * 60
-        )
-
+        print("=" * 60)
         print(
             "VIDEO DETECTION ERROR:",
-            error,
+            error
         )
-
-        print(
-            "=" * 60
-        )
+        print("=" * 60)
 
         raise HTTPException(
             status_code=500,
-            detail=str(error),
+            detail=str(error)
         )
 
 
@@ -232,30 +205,37 @@ async def detect_frame(
     file: UploadFile = File(...)
 ):
 
-    upload_dir = Path(
-        "uploads/live"
-    )
+    upload_dir = Path("uploads/live")
 
     upload_dir.mkdir(
         parents=True,
-        exist_ok=True,
+        exist_ok=True
     )
 
     file_path = (
-        upload_dir / "camera1.jpg"
+        upload_dir /
+        "camera1.jpg"
     )
 
     try:
 
+        # ----------------------------------------------------
+        # SAVE CAMERA FRAME
+        # ----------------------------------------------------
+
         with open(
             file_path,
-            "wb",
+            "wb"
         ) as buffer:
 
             shutil.copyfileobj(
                 file.file,
-                buffer,
+                buffer
             )
+
+        # ----------------------------------------------------
+        # READ CAMERA FRAME
+        # ----------------------------------------------------
 
         frame = cv2.imread(
             str(file_path)
@@ -265,50 +245,90 @@ async def detect_frame(
 
             raise HTTPException(
                 status_code=400,
-                detail=(
-                    "Invalid camera frame."
+                detail="Invalid camera frame."
+            )
+
+        # ----------------------------------------------------
+        # PROCESS LIVE FRAME
+        # ----------------------------------------------------
+
+        result = await detector.process_live_frame(
+            frame,
+            camera_name="Camera 1"
+        )
+
+        incident = result.get(
+            "incident"
+        )
+
+        # ----------------------------------------------------
+        # SERIALIZE INCIDENT
+        # ----------------------------------------------------
+
+        incident_data = None
+
+        if incident:
+
+            incident_data = {
+                "id": str(
+                    incident.id
                 ),
-            )
 
-        detections = (
-            detector.process_frame(
-                frame,
-                confidence_threshold=0.40,
-            )
-        )
+                "incident_id": str(
+                    incident.id
+                ),
 
-        if not detections:
+                "incident_number":
+                    incident.incident_number,
 
-            return {
-                "detected": False,
-                "detections": [],
-                "threat": None,
-                "incident_created": False,
-                "incident": None,
+                "status":
+                    incident.status.value,
+
+                "severity":
+                    incident.severity.value,
+
+                "confidence":
+                    float(
+                        incident.ai_confidence
+                        or 0
+                    ),
+
+                "summary":
+                    incident.summary,
+
+                "camera_id":
+                    str(
+                        incident.camera_id
+                    ),
+
+                "detected_at":
+                    (
+                        incident.detected_at.isoformat()
+                        if incident.detected_at
+                        else None
+                    ),
             }
 
-        threat = (
-            detector.detect_threats(
-                detections
-            )
-        )
-
-        if threat is None:
-
-            return {
-                "detected": False,
-                "detections": detections,
-                "threat": None,
-                "incident_created": False,
-                "incident": None,
-            }
+        # ----------------------------------------------------
+        # RESPONSE
+        # ----------------------------------------------------
 
         return {
-            "detected": True,
-            "detections": detections,
-            "threat": threat,
-            "incident_created": False,
-            "incident": None,
+
+            "detected":
+                result["detected"],
+
+            "detections":
+                result["detections"],
+
+            "threat":
+                result["threat"],
+
+            "incident_created":
+                result["incident_created"],
+
+            "incident":
+                incident_data,
         }
 
     except HTTPException:
@@ -318,17 +338,17 @@ async def detect_frame(
 
         print(
             "Live frame detection error:",
-            error,
+            error
         )
 
         raise HTTPException(
             status_code=500,
-            detail=str(error),
+            detail=str(error)
         )
 
 
 # ============================================================
-# DIRECT OPENCV LIVE CAMERA
+# LOCAL WEBCAM TEST
 # ============================================================
 
 @router.get("/live")
@@ -340,18 +360,14 @@ async def live_detection():
 
         raise HTTPException(
             status_code=500,
-            detail=(
-                "Unable to open webcam."
-            ),
+            detail="Unable to open webcam."
         )
 
     try:
 
         while True:
 
-            success, frame = (
-                cap.read()
-            )
+            success, frame = cap.read()
 
             if not success:
                 break
@@ -359,20 +375,20 @@ async def live_detection():
             detections = (
                 detector.process_frame(
                     frame,
-                    confidence_threshold=0.40,
+                    confidence_threshold=0.40
                 )
             )
 
             frame = (
                 detector.draw_boxes(
                     frame,
-                    detections,
+                    detections
                 )
             )
 
             cv2.imshow(
                 "Sentinel AI",
-                frame,
+                frame
             )
 
             if (

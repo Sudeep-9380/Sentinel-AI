@@ -55,8 +55,7 @@ async def list_incidents(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Return all active incidents, newest first.
-    Deleted incidents are excluded.
+    Return all non-deleted incidents, newest first.
     """
 
     stmt = (
@@ -84,7 +83,7 @@ async def get_incident(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Return a single active incident.
+    Return one non-deleted incident.
     """
 
     stmt = (
@@ -124,8 +123,6 @@ async def create_incident(
 ):
     """
     Create a new incident record.
-
-    Called by the AI detector.
     """
 
     # ------------------------------------------------------------
@@ -302,87 +299,327 @@ async def delete_department_dispatch(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Remove dispatch information for ONE department only.
+    Remove dispatch information for ONE department.
 
-    Examples:
-        DELETE /incidents/{id}/dispatch/POLICE
-        DELETE /incidents/{id}/dispatch/FIRE
-        DELETE /incidents/{id}/dispatch/MEDICAL
+    Supported:
 
-    This does NOT delete the incident.
+        POLICE
+        POLICE TEAM
+        FIRE
+        FIRE TEAM
+        MEDICAL
+        MEDICAL TEAM
+
+    After removing the selected department:
+
+    - The department disappears from dispatched_offices.
+    - The department dashboard will no longer receive that incident.
+    - If no dispatches remain, the incident is soft-deleted.
     """
 
-    department = department.upper().strip()
+    # ============================================================
+    # NORMALIZE DEPARTMENT
+    # ============================================================
 
-    # These must exactly match the keys stored
-    # inside incident.dispatched_offices.
-    department_map = {
-        "POLICE": "POLICE TEAM",
-        "POLICE TEAM": "POLICE TEAM",
+    department = (
+        department
+        .upper()
+        .strip()
+        .replace("_", " ")
+        .replace("-", " ")
+    )
 
-        "FIRE": "FIRE TEAM",
-        "FIRE TEAM": "FIRE TEAM",
+    # Convert multiple spaces to one
+    department = " ".join(
+        department.split()
+    )
 
-        "MEDICAL": "MEDICAL TEAM",
-        "MEDICAL TEAM": "MEDICAL TEAM",
+
+    # ============================================================
+    # DEPARTMENT ALIASES
+    # ============================================================
+
+    department_aliases = {
+
+        "POLICE": [
+            "POLICE",
+            "POLICE TEAM",
+        ],
+
+        "FIRE": [
+            "FIRE",
+            "FIRE TEAM",
+        ],
+
+        "MEDICAL": [
+            "MEDICAL",
+            "MEDICAL TEAM",
+            "HOSPITAL",
+        ],
     }
 
-    if department not in department_map:
+
+    if department not in department_aliases:
+
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid department. Use POLICE, FIRE or MEDICAL.",
+            detail=(
+                "Invalid department. "
+                "Use POLICE, FIRE or MEDICAL."
+            ),
         )
 
-    dispatch_key = department_map[department]
 
-    # Find incident
+    possible_keys = department_aliases[
+        department
+    ]
+
+
+    # ============================================================
+    # FIND INCIDENT
+    # ============================================================
+
     stmt = select(Incident).where(
         Incident.id == incident_id,
         Incident.deleted_at.is_(None),
     )
 
     result = await db.execute(stmt)
+
     incident = result.scalar_one_or_none()
 
+
     if not incident:
+
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Incident {incident_id} not found.",
+            detail=(
+                f"Incident {incident_id} "
+                f"not found."
+            ),
         )
 
-    # Copy existing JSON dispatch information
+
+    # ============================================================
+    # GET CURRENT DISPATCH DATA
+    # ============================================================
+
     dispatched_offices = (
-        dict(incident.dispatched_offices)
+        dict(
+            incident.dispatched_offices
+        )
         if incident.dispatched_offices
         else {}
     )
 
-    # Already removed
-    if dispatch_key not in dispatched_offices:
-        return {
-            "success": True,
-            "message": f"No {dispatch_key} dispatch found.",
-            "incident_id": str(incident_id),
-            "department": dispatch_key,
-        }
-
-    # Remove only the requested department
-    del dispatched_offices[dispatch_key]
-
-    # Force SQLAlchemy to recognize JSON change
-    incident.dispatched_offices = dispatched_offices
-
-    await db.commit()
-    await db.refresh(incident)
 
     print(
-        f"--- {dispatch_key} DISPATCH REMOVED "
-        f"FROM INCIDENT {incident_id} ---"
+        "CURRENT DISPATCH DATA:",
+        dispatched_offices
     )
 
+
+    # ============================================================
+    # FIND ACTUAL KEY
+    #
+    # Handles:
+    #
+    # POLICE
+    # POLICE TEAM
+    # FIRE
+    # FIRE TEAM
+    # MEDICAL
+    # MEDICAL TEAM
+    # ============================================================
+
+    actual_key = None
+
+
+    for key in possible_keys:
+
+        if key in dispatched_offices:
+
+            actual_key = key
+
+            break
+
+
+    # Also perform case-insensitive
+    # matching for safety.
+
+    if actual_key is None:
+
+        for existing_key in list(
+            dispatched_offices.keys()
+        ):
+
+            normalized_existing_key = (
+                str(existing_key)
+                .upper()
+                .strip()
+            )
+
+            for key in possible_keys:
+
+                if (
+                    normalized_existing_key
+                    == key
+                ):
+
+                    actual_key = existing_key
+
+                    break
+
+            if actual_key is not None:
+                break
+
+
+    # ============================================================
+    # DISPATCH NOT FOUND
+    # ============================================================
+
+    if actual_key is None:
+
+        return {
+            "success": True,
+
+            "message": (
+                f"No {department} "
+                f"dispatch found."
+            ),
+
+            "incident_id": str(
+                incident_id
+            ),
+
+            "department": department,
+
+            "incident_deleted": False,
+
+            "remaining_dispatches": (
+                list(
+                    dispatched_offices.keys()
+                )
+            ),
+        }
+
+
+    # ============================================================
+    # REMOVE DEPARTMENT
+    # ============================================================
+
+    print(
+        f"--- REMOVING DISPATCH --- "
+        f"{actual_key}"
+    )
+
+    del dispatched_offices[
+        actual_key
+    ]
+
+
+    # ============================================================
+    # UPDATE INCIDENT
+    # ============================================================
+
+    incident.dispatched_offices = (
+        dispatched_offices
+    )
+
+
+    # ============================================================
+    # CHECK REMAINING DISPATCHES
+    # ============================================================
+
+    incident_deleted = False
+
+
+    if not dispatched_offices:
+
+        incident.deleted_at = (
+            datetime.now(timezone.utc)
+        )
+
+        incident.status = (
+            IncidentStatus.RESOLVED
+        )
+
+        incident_deleted = True
+
+        print(
+            "--- INCIDENT SOFT DELETED ---",
+            incident_id,
+        )
+
+
+    # ============================================================
+    # SAVE TO DATABASE
+    # ============================================================
+
+    await db.commit()
+
+    await db.refresh(
+        incident
+    )
+
+
+    # ============================================================
+    # LOG
+    # ============================================================
+
+    print(
+        f"--- {department} DISPATCH "
+        f"REMOVED ---"
+    )
+
+    print(
+        "INCIDENT:",
+        incident_id
+    )
+
+    print(
+        "REMOVED KEY:",
+        actual_key
+    )
+
+    print(
+        "REMAINING DISPATCHES:",
+        incident.dispatched_offices
+    )
+
+
+    # ============================================================
+    # RESPONSE
+    # ============================================================
+
     return {
+
         "success": True,
-        "message": f"{dispatch_key} dispatch removed successfully.",
-        "incident_id": str(incident_id),
-        "department": dispatch_key,
+
+        "message": (
+            f"{department} dispatch "
+            f"removed successfully."
+        ),
+
+        "incident_id": str(
+            incident_id
+        ),
+
+        "department": department,
+
+        "removed_key": actual_key,
+
+        "incident_deleted": (
+            incident_deleted
+        ),
+
+        "remaining_dispatches": (
+            list(
+                incident
+                .dispatched_offices
+                .keys()
+            )
+            if incident.dispatched_offices
+            else []
+        ),
     }

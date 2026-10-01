@@ -178,6 +178,20 @@ export default function FirePage() {
 
             <DispatchTable
               department="FIRE"
+              onDispatchRemoved={(incidentId) => {
+                setIncidents((current) =>
+                  current.filter(
+                    (incident) =>
+                      incident.id !== incidentId
+                  )
+                );
+
+                setActiveIncident((current: any) =>
+                  current?.id === incidentId
+                    ? null
+                    : current
+                );
+              }}
             />
 
           </div>
