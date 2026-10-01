@@ -56,7 +56,7 @@ export default function DispatchTable({
 
   const departmentKey =
     department === "POLICE"
-      ? "POLICE"
+      ? "POLICE TEAM"
       : department === "FIRE"
         ? "FIRE TEAM"
         : "MEDICAL TEAM";
